@@ -1,0 +1,66 @@
+service: site-monitor
+custom:
+    SNS_ALERT: '${file(env.yml):snsAlertARN}'
+    DYNAMODB_TABLE: '${file(env.yml):dynamodbTaleARN}'
+    DYNAMODB_TABLE_NAME: '${file(env.yml):dynamodbTaleName}'
+    DEPLOY_STAGE: '${opt:stage, self:provider.stage}'
+    enabled:
+        dev: false
+        prod: true
+provider:
+    name: aws
+    runtime: python3.6
+    stage: dev
+    region: us-east-1
+    timeout: 10
+    stackName: 'site-monitor-lambda-stack-${self:custom.DEPLOY_STAGE}'
+    iamRoleStatements:
+        -
+            Effect: Allow
+            Action:
+                - 'dynamodb:Scan'
+            Resource: '${self:custom.DYNAMODB_TABLE}'
+        -
+            Effect: Allow
+            Action:
+                - 'lambda:InvokeFunction'
+            Resource: '*'
+        -
+            Effect: Allow
+            Action:
+                - 'sns:Publish'
+            Resource: '${self:custom.SNS_ALERT}'
+    logRetentionInDays: 7
+    deploymentBucket:
+        name: 'serverless.${self:service}.deploys'
+    environment:
+        SERVERLESS_STAGE: '${self:custom.DEPLOY_STAGE}'
+package:
+    exclude:
+        - .git/**
+        - .gitignore
+        - .vscode
+functions:
+    main:
+        handler: handler.main
+        name: 'site-monitor-${self:custom.DEPLOY_STAGE}'
+        description: Monitor web sites
+        environment:
+            DYNAMODB_TABLE: '${self:custom.DYNAMODB_TABLE_NAME}'
+        events:
+            -
+                schedule:
+                    name: 'site-monitor-schedule-${self:custom.DEPLOY_STAGE}'
+                    description: Run the web site monitor every 15 minutes
+                    rate: rate(15 minutes)
+                    enabled: '${self:custom.enabled.${self:custom.DEPLOY_STAGE}}'
+        tags:
+            BUSINESS: CKA
+    ping:
+        handler: handler.ping
+        name: 'site-monitor-ping-${self:custom.DEPLOY_STAGE}'
+        description: Ping the web site to see if it's up or down
+        environment:
+            SNS_ALERT: '${self:custom.SNS_ALERT}'
+        tags:
+            BUSINESS: CKA
